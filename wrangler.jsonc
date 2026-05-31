@@ -10,7 +10,7 @@
 	"d1_databases": [
 		{
 			"binding": "DB",
-			"database_name": "hudu-docs-db",
+			"database_name": "bsidocs",
 			"database_id": "local-db"
 		}
 	],
