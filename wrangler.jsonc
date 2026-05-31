@@ -11,7 +11,7 @@
 		{
 			"binding": "DB",
 			"database_name": "bsidocs",
-			"database_id": "local-db"
+			"database_id": "11c0d7f3-4c52-46d3-ab6c-5c2c3360a3b2"
 		}
 	],
 	"kv_namespaces": [
