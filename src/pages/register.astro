@@ -1,0 +1,94 @@
+---
+import "../styles/app.css";
+---
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register | Internal Docs</title>
+</head>
+<body class="auth-page">
+    <div class="card auth-card">
+        <div class="auth-header">
+            <div class="sidebar-brand" style="justify-content: center; margin-bottom: 1rem; font-size: 1.8rem;">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 28px; height: 28px;">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                </svg>
+                <span>Hudu Docs</span>
+            </div>
+            <h1 class="auth-title">Create account</h1>
+            <p style="color: var(--text-secondary); font-size: 0.9rem;">Register a profile to manage company resources</p>
+        </div>
+
+        <div id="alertBox" class="alert alert-error" style="display: none;"></div>
+
+        <form id="registerForm">
+            <div class="form-group">
+                <label class="form-label" for="name">Full Name</label>
+                <input class="form-input" type="text" id="name" required placeholder="John Doe" autocomplete="name">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="email">Email Address</label>
+                <input class="form-input" type="email" id="email" required placeholder="name@company.com" autocomplete="email">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="password">Password</label>
+                <input class="form-input" type="password" id="password" required placeholder="Min. 8 characters" autocomplete="new-password">
+            </div>
+
+            <button class="btn btn-primary" type="submit" style="width: 100%; margin-top: 1rem; padding: 0.75rem;">
+                Create Account
+            </button>
+        </form>
+
+        <div class="auth-footer">
+            Already have an account? <a href="/login" class="auth-link">Sign in</a>
+        </div>
+    </div>
+
+    <script>
+        import { authClient } from "../lib/auth-client";
+
+        const form = document.getElementById("registerForm") as HTMLFormElement;
+        const alertBox = document.getElementById("alertBox") as HTMLDivElement;
+        const submitBtn = form.querySelector("button[type='submit']") as HTMLButtonElement;
+
+        form.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            alertBox.style.display = "none";
+            submitBtn.disabled = true;
+            submitBtn.textContent = "Creating profile...";
+
+            const name = (document.getElementById("name") as HTMLInputElement).value;
+            const email = (document.getElementById("email") as HTMLInputElement).value;
+            const password = (document.getElementById("password") as HTMLInputElement).value;
+
+            if (password.length < 8) {
+                alertBox.textContent = "Password must be at least 8 characters.";
+                alertBox.style.display = "block";
+                submitBtn.disabled = false;
+                submitBtn.textContent = "Create Account";
+                return;
+            }
+
+            const { data, error } = await authClient.signUp.email({
+                email,
+                password,
+                name,
+                callbackURL: "/"
+            });
+
+            if (error) {
+                alertBox.textContent = error.message || "Failed to create account.";
+                alertBox.style.display = "block";
+                submitBtn.disabled = false;
+                submitBtn.textContent = "Create Account";
+            }
+        });
+    </script>
+</body>
+</html>

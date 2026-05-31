@@ -1,0 +1,519 @@
+---
+import DashboardLayout from "../layouts/DashboardLayout.astro";
+
+const runtime = Astro.locals.runtime;
+let templates: any[] = [];
+let runs: any[] = [];
+
+if (runtime && runtime.env && runtime.env.DB) {
+    const db = runtime.env.DB;
+    const templatesRes = await db.prepare("SELECT * FROM checklist_templates ORDER BY name ASC").all();
+    const runsRes = await db.prepare("SELECT * FROM checklist_runs ORDER BY created_at DESC").all();
+
+    templates = templatesRes?.results || [];
+    runs = runsRes?.results || [];
+}
+---
+
+<DashboardLayout title="Checklists" activeNav="checklists">
+    <div class="page-header">
+        <div>
+            <h1 class="page-title">Operational Checklists</h1>
+            <p class="page-subtitle">Standardized procedures, audits, and deployment checklists</p>
+        </div>
+        <button class="btn btn-primary" id="openCreateTemplateBtn">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px;">
+                <line x1="12" y1="5" x2="12" y2="19"/>
+                <line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            New Template
+        </button>
+    </div>
+
+    <div class="layout-split">
+        <!-- Sidebar - Reusable Templates and Runs lists -->
+        <div class="list-panel">
+            <div class="panel-header">
+                <span class="panel-title">Templates</span>
+            </div>
+            
+            <div id="templatesList" style="display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 2rem;">
+                {templates.map(tmpl => (
+                    <button class="list-item-btn template-item-btn" data-id={tmpl.id} data-items={tmpl.items_json} data-name={tmpl.name} data-desc={tmpl.description}>
+                        <span style="display: flex; align-items: center; gap: 0.5rem;">
+                            <span>📋</span>
+                            <span>{tmpl.name}</span>
+                        </span>
+                    </button>
+                ))}
+                {templates.length === 0 && (
+                    <div style="color: var(--text-muted); font-size: 0.875rem; text-align: center; padding: 1.5rem 0.5rem; background: rgba(255,255,255,0.01); border-radius: var(--radius-sm); border: 1px dashed var(--border-color);">
+                        No templates created.
+                    </div>
+                )}
+            </div>
+
+            <div class="panel-header">
+                <span class="panel-title">Active Runs</span>
+            </div>
+            
+            <div id="runsList" style="display: flex; flex-direction: column; gap: 0.5rem;">
+                {runs.map(run => (
+                    <button class="list-item-btn run-item-btn" data-id={run.id} data-progress={run.progress_json} data-name={run.name} data-status={run.status} data-tmpl={run.template_id}>
+                        <span style="display: flex; flex-direction: column; gap: 0.25rem; width: 100%;">
+                            <span style="display: flex; align-items: center; justify-content: space-between;">
+                                <span style="font-weight: 600;">{run.name}</span>
+                                <span style={`font-size: 0.7rem; padding: 0.15rem 0.4rem; border-radius: 4px; ${run.status === 'completed' ? 'background: rgba(16, 185, 129, 0.15); color: #34d399;' : 'background: rgba(245, 158, 11, 0.15); color: #fbbf24;'}`}>{run.status}</span>
+                            </span>
+                            <span style="font-size: 0.75rem; color: var(--text-muted);">
+                                Started: {new Date(run.created_at).toLocaleDateString()}
+                            </span>
+                        </span>
+                    </button>
+                ))}
+                {runs.length === 0 && (
+                    <div style="color: var(--text-muted); font-size: 0.875rem; text-align: center; padding: 1.5rem 0.5rem;">
+                        No active checklist runs.
+                    </div>
+                )}
+            </div>
+        </div>
+
+        <!-- Main Display Panel -->
+        <div id="mainDisplay" class="card" style="min-height: 400px; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; color: var(--text-secondary);">
+            <div id="emptyDisplayState">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="width: 48px; height: 48px; margin-bottom: 1rem; color: var(--text-muted);">
+                    <polyline points="9 11 12 14 22 4"/>
+                    <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+                </svg>
+                <p>Select a template or an active run from the sidebar to inspect items or track operation status.</p>
+            </div>
+
+            <!-- Content for Selected Template -->
+            <div id="templateView" style="display: none; width: 100%; text-align: left;">
+                <div class="flex-between" style="border-bottom: 1px solid var(--border-color); padding-bottom: 1.25rem; margin-bottom: 1.5rem;">
+                    <div>
+                        <h2 id="viewTmplName" style="font-size: 1.5rem; font-weight: 700; color: var(--text-primary);"></h2>
+                        <p id="viewTmplDesc" style="color: var(--text-secondary); font-size: 0.9rem; margin-top: 0.25rem;"></p>
+                    </div>
+                    <div class="flex-row">
+                        <button class="btn btn-danger btn-sm" id="deleteTmplBtn">Delete Template</button>
+                        <button class="btn btn-primary btn-sm" id="startRunBtn">Start Checklist Run</button>
+                    </div>
+                </div>
+
+                <h3 style="font-size: 0.85rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 1rem;">Procedure Items</h3>
+                <ol id="tmplItemsList" style="padding-left: 1.25rem; display: flex; flex-direction: column; gap: 0.75rem; color: var(--text-primary); font-size: 0.95rem;">
+                    <!-- Loaded dynamically -->
+                </ol>
+            </div>
+
+            <!-- Content for Selected Checklist Run -->
+            <div id="runView" style="display: none; width: 100%; text-align: left;">
+                <div class="flex-between" style="border-bottom: 1px solid var(--border-color); padding-bottom: 1.25rem; margin-bottom: 1.5rem;">
+                    <div>
+                        <h2 id="viewRunName" style="font-size: 1.5rem; font-weight: 700; color: var(--text-primary);"></h2>
+                        <p style="color: var(--text-secondary); font-size: 0.9rem; margin-top: 0.25rem;">
+                            Status: <strong id="viewRunStatusText">Active</strong>
+                        </p>
+                    </div>
+                    <button class="btn btn-danger btn-sm" id="deleteRunBtn">Delete Run</button>
+                </div>
+
+                <div class="card" style="padding: 1.25rem; background: rgba(255,255,255,0.01); border-color: var(--border-color); margin-bottom: 1.5rem;">
+                    <div class="flex-between" style="font-size: 0.85rem; font-weight: 600; color: var(--text-secondary);">
+                        <span>Run Progress</span>
+                        <span id="runProgressPercent">0%</span>
+                    </div>
+                    <div class="checklist-progress-container">
+                        <div class="checklist-progress-bar" id="runProgressBar" style="width: 0%;"></div>
+                    </div>
+                </div>
+
+                <h3 style="font-size: 0.85rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Execution Items</h3>
+                <div class="checklist-items-list" id="runItemsGrid">
+                    <!-- Dynamic Checklist Checklist items -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: Create Checklist Template -->
+    <div class="modal-overlay" id="createTmplModal" style="display: none;">
+        <div class="modal" style="max-width: 550px;">
+            <div class="modal-header">
+                <h3 style="font-size: 1.25rem; font-weight: 700;">New Checklist Template</h3>
+                <button class="btn btn-secondary btn-sm" style="padding: 0.25rem; border: none; background: transparent;" onclick="document.getElementById('createTmplModal').style.display='none'">✕</button>
+            </div>
+            
+            <form id="createTmplForm">
+                <div class="form-group">
+                    <label class="form-label" for="tmplName">Template Name</label>
+                    <input class="form-input" type="text" id="tmplName" required placeholder="e.g. Core Server Backup, Weekly Routine Verification">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="tmplDescription">Description / Notes</label>
+                    <input class="form-input" type="text" id="tmplDescription" placeholder="Deployment details...">
+                </div>
+
+                <div style="border-top: 1px solid var(--border-color); margin-top: 1.5rem; padding-top: 1rem;">
+                    <div class="flex-between" style="margin-bottom: 1rem;">
+                        <span style="font-size: 0.9rem; font-weight: 600; color: var(--text-secondary);">Task List</span>
+                        <button type="button" class="btn btn-secondary btn-sm" id="addTaskItemBtn">+ Add Task</button>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 0.5rem;" id="taskBuilderList">
+                        <div class="flex-row task-row">
+                            <input class="form-input" type="text" placeholder="Task item detail (e.g. Verify backups on AWS S3)" required>
+                            <button type="button" class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">✕</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="document.getElementById('createTmplModal').style.display='none'">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="saveTmplSubmitBtn">Create Template</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: Start Run -->
+    <div class="modal-overlay" id="startRunModal" style="display: none;">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 style="font-size: 1.25rem; font-weight: 700;">Start Run Instance</h3>
+                <button class="btn btn-secondary btn-sm" style="padding: 0.25rem; border: none; background: transparent;" onclick="document.getElementById('startRunModal').style.display='none'">✕</button>
+            </div>
+            
+            <form id="startRunForm">
+                <div class="form-group">
+                    <label class="form-label" for="runNameInput">Checklist Run Title</label>
+                    <input class="form-input" type="text" id="runNameInput" required placeholder="e.g. Server Deployment - 2026-06-01">
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="document.getElementById('startRunModal').style.display='none'">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="startRunSubmitBtn">Launch Run</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script define:vars={{ runs }}>
+        let selectedTmplId = "";
+        let selectedTmplItems = [];
+        let selectedRunId = "";
+        let selectedRunProgress = [];
+
+        // Modals Toggle
+        const openCreateTemplateBtn = document.getElementById("openCreateTemplateBtn");
+        const createTmplModal = document.getElementById("createTmplModal");
+        openCreateTemplateBtn?.addEventListener("click", () => {
+            if (createTmplModal) createTmplModal.style.display = "flex";
+        });
+
+        // Add Task Builder row
+        const addTaskItemBtn = document.getElementById("addTaskItemBtn");
+        const taskBuilderList = document.getElementById("taskBuilderList");
+        addTaskItemBtn?.addEventListener("click", () => {
+            if (!taskBuilderList) return;
+            const row = document.createElement("div");
+            row.className = "flex-row task-row";
+            row.innerHTML = `
+                <input class="form-input" type="text" placeholder="Task item detail..." required>
+                <button type="button" class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">✕</button>
+            `;
+            taskBuilderList.appendChild(row);
+        });
+
+        // Create Template Submit
+        const createTmplForm = document.getElementById("createTmplForm");
+        createTmplForm?.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const name = (document.getElementById("tmplName") as HTMLInputElement).value;
+            const description = (document.getElementById("tmplDescription") as HTMLInputElement).value;
+
+            const items: string[] = [];
+            const rows = taskBuilderList?.querySelectorAll(".task-row");
+            rows?.forEach(row => {
+                const text = (row.querySelector("input") as HTMLInputElement).value;
+                items.push(text);
+            });
+
+            const submitBtn = document.getElementById("saveTmplSubmitBtn") as HTMLButtonElement;
+            submitBtn.disabled = true;
+            submitBtn.textContent = "Creating...";
+
+            try {
+                const res = await fetch("/api/checklists?action=create_template", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ name, description, items })
+                });
+                if (res.ok) {
+                    window.location.reload();
+                } else {
+                    alert("Failed to create template");
+                }
+            } catch (err) {
+                console.error(err);
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = "Create Template";
+            }
+        });
+
+        // Template Sidebar Selection
+        const templateItemBtns = document.querySelectorAll(".template-item-btn");
+        const mainDisplay = document.getElementById("mainDisplay");
+        const emptyDisplayState = document.getElementById("emptyDisplayState");
+        const templateView = document.getElementById("templateView");
+        const runView = document.getElementById("runView");
+
+        templateItemBtns.forEach(btn => {
+            btn.addEventListener("click", () => {
+                // Highlight sidebar active
+                document.querySelectorAll(".list-item-btn").forEach(b => b.classList.remove("active"));
+                btn.classList.add("active");
+
+                const id = btn.getAttribute("data-id") || "";
+                const name = btn.getAttribute("data-name") || "";
+                const desc = btn.getAttribute("data-desc") || "";
+                const items = JSON.parse(btn.getAttribute("data-items") || "[]");
+
+                selectedTmplId = id;
+                selectedTmplItems = items;
+
+                if (mainDisplay && emptyDisplayState && templateView && runView) {
+                    mainDisplay.style.display = "block";
+                    mainDisplay.style.alignItems = "unset";
+                    mainDisplay.style.textAlign = "left";
+
+                    emptyDisplayState.style.display = "none";
+                    runView.style.display = "none";
+                    templateView.style.display = "block";
+
+                    const viewTmplName = document.getElementById("viewTmplName");
+                    const viewTmplDesc = document.getElementById("viewTmplDesc");
+                    if (viewTmplName) viewTmplName.textContent = name;
+                    if (viewTmplDesc) viewTmplDesc.textContent = desc;
+
+                    const tmplItemsList = document.getElementById("tmplItemsList");
+                    if (tmplItemsList) {
+                        tmplItemsList.innerHTML = "";
+                        items.forEach((item: string) => {
+                            const li = document.createElement("li");
+                            li.textContent = item;
+                            tmplItemsList.appendChild(li);
+                        });
+                    }
+                }
+            });
+        });
+
+        // Delete Template
+        const deleteTmplBtn = document.getElementById("deleteTmplBtn");
+        deleteTmplBtn?.addEventListener("click", async () => {
+            if (!selectedTmplId) return;
+            if (!confirm("Are you sure you want to delete this template and all of its run instances?")) return;
+
+            try {
+                const res = await fetch("/api/checklists?action=delete_template", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ id: selectedTmplId })
+                });
+                if (res.ok) {
+                    window.location.reload();
+                }
+            } catch (err) {
+                console.error(err);
+            }
+        });
+
+        // Start Run modal trigger
+        const startRunBtn = document.getElementById("startRunBtn");
+        const startRunModal = document.getElementById("startRunModal");
+        startRunBtn?.addEventListener("click", () => {
+            if (!startRunModal) return;
+            
+            const activeTmplBtn = document.querySelector(".template-item-btn.active");
+            const tmplName = activeTmplBtn ? activeTmplBtn.getAttribute("data-name") : "";
+            const runNameInput = document.getElementById("runNameInput") as HTMLInputElement;
+            if (runNameInput) {
+                const today = new Date().toISOString().split('T')[0];
+                runNameInput.value = `${tmplName} - Run ${today}`;
+            }
+
+            startRunModal.style.display = "flex";
+        });
+
+        // Start Run submit
+        const startRunForm = document.getElementById("startRunForm");
+        startRunForm?.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            if (!selectedTmplId) return;
+
+            const name = (document.getElementById("runNameInput") as HTMLInputElement).value;
+            const submitBtn = document.getElementById("startRunSubmitBtn") as HTMLButtonElement;
+            submitBtn.disabled = true;
+            submitBtn.textContent = "Launching...";
+
+            try {
+                const res = await fetch("/api/checklists?action=start_run", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ template_id: selectedTmplId, name })
+                });
+                if (res.ok) {
+                    window.location.reload();
+                } else {
+                    alert("Failed to start checklist run");
+                }
+            } catch (err) {
+                console.error(err);
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = "Launch Run";
+            }
+        });
+
+        // Run Sidebar Selection
+        const runItemBtns = document.querySelectorAll(".run-item-btn");
+        runItemBtns.forEach(btn => {
+            btn.addEventListener("click", () => {
+                document.querySelectorAll(".list-item-btn").forEach(b => b.classList.remove("active"));
+                btn.classList.add("active");
+
+                const id = btn.getAttribute("data-id") || "";
+                const name = btn.getAttribute("data-name") || "";
+                const status = btn.getAttribute("data-status") || "";
+                const progress = JSON.parse(btn.getAttribute("data-progress") || "[]");
+
+                selectedRunId = id;
+                selectedRunProgress = progress;
+
+                if (mainDisplay && emptyDisplayState && templateView && runView) {
+                    mainDisplay.style.display = "block";
+                    mainDisplay.style.alignItems = "unset";
+                    mainDisplay.style.textAlign = "left";
+
+                    emptyDisplayState.style.display = "none";
+                    templateView.style.display = "none";
+                    runView.style.display = "block";
+
+                    const viewRunName = document.getElementById("viewRunName");
+                    const viewRunStatusText = document.getElementById("viewRunStatusText");
+                    if (viewRunName) viewRunName.textContent = name;
+                    if (viewRunStatusText) {
+                        viewRunStatusText.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+                        viewRunStatusText.style.color = status === "completed" ? "#34d399" : "#fbbf24";
+                    }
+
+                    renderRunProgress();
+                    renderRunItemsGrid();
+                }
+            });
+        });
+
+        function renderRunProgress() {
+            if (selectedRunProgress.length === 0) return;
+            const completedCount = selectedRunProgress.filter(item => item.completed).length;
+            const pct = Math.round((completedCount / selectedRunProgress.length) * 100);
+
+            const percentText = document.getElementById("runProgressPercent");
+            const progressBar = document.getElementById("runProgressBar");
+
+            if (percentText) percentText.textContent = `${pct}%`;
+            if (progressBar) progressBar.style.width = `${pct}%`;
+        }
+
+        function renderRunItemsGrid() {
+            const grid = document.getElementById("runItemsGrid");
+            if (!grid) return;
+            grid.innerHTML = "";
+
+            selectedRunProgress.forEach((item: any, idx: number) => {
+                const itemDiv = document.createElement("div");
+                itemDiv.className = `checklist-item ${item.completed ? 'completed' : ''}`;
+                
+                itemDiv.innerHTML = `
+                    <input class="checklist-checkbox" type="checkbox" ${item.completed ? 'checked' : ''}>
+                    <div style="display: flex; flex-direction: column;">
+                        <span class="checklist-item-text">${item.text}</span>
+                        ${item.completed_at ? `<span style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.15rem;">Completed on ${new Date(item.completed_at).toLocaleTimeString()}</span>` : ''}
+                    </div>
+                `;
+
+                // Handle Checkbox Toggles
+                const checkbox = itemDiv.querySelector("input[type='checkbox']") as HTMLInputElement;
+                checkbox.addEventListener("change", async () => {
+                    item.completed = checkbox.checked;
+                    item.completed_at = checkbox.checked ? Date.now() : null;
+
+                    // Update UI state immediately
+                    if (checkbox.checked) {
+                        itemDiv.classList.add("completed");
+                    } else {
+                        itemDiv.classList.remove("completed");
+                    }
+
+                    renderRunProgress();
+
+                    try {
+                        const res = await fetch("/api/checklists?action=update_run_progress", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ id: selectedRunId, progress: selectedRunProgress })
+                        });
+                        
+                        if (res.ok) {
+                            const data = await res.json();
+                            const viewRunStatusText = document.getElementById("viewRunStatusText");
+                            if (viewRunStatusText) {
+                                viewRunStatusText.textContent = data.status.charAt(0).toUpperCase() + data.status.slice(1);
+                                viewRunStatusText.style.color = data.status === "completed" ? "#34d399" : "#fbbf24";
+                            }
+                            
+                            // Update sidebar cache status for consistency
+                            const activeRunBtn = document.querySelector(".run-item-btn.active");
+                            activeRunBtn?.setAttribute("data-progress", JSON.stringify(selectedRunProgress));
+                            activeRunBtn?.setAttribute("data-status", data.status);
+                            
+                            const badge = activeRunBtn?.querySelector("span[style*='font-size']") as HTMLElement;
+                            if (badge) {
+                                badge.textContent = data.status;
+                                badge.style.color = data.status === "completed" ? "#34d399" : "#fbbf24";
+                                badge.style.background = data.status === "completed" ? "rgba(16, 185, 129, 0.15)" : "rgba(245, 158, 11, 0.15)";
+                            }
+                        }
+                    } catch (err) {
+                        console.error(err);
+                    }
+                });
+
+                grid.appendChild(itemDiv);
+            });
+        }
+
+        // Delete Run
+        const deleteRunBtn = document.getElementById("deleteRunBtn");
+        deleteRunBtn?.addEventListener("click", async () => {
+            if (!selectedRunId) return;
+            if (!confirm("Are you sure you want to delete this checklist run history?")) return;
+
+            try {
+                const res = await fetch("/api/checklists?action=delete_run", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ id: selectedRunId })
+                });
+                if (res.ok) {
+                    window.location.reload();
+                }
+            } catch (err) {
+                console.error(err);
+            }
+        });
+    </script>
+</DashboardLayout>

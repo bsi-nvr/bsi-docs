@@ -1,0 +1,154 @@
+---
+import DashboardLayout from "../layouts/DashboardLayout.astro";
+import { getCollection } from "astro:content";
+
+const runtime = Astro.locals.runtime;
+let stats = {
+    kbCount: 0,
+    typeCount: 0,
+    assetCount: 0,
+    activeChecklists: 0
+};
+let bitwardenVaultUrl = "https://vault.bitwarden.com";
+
+if (runtime && runtime.env && runtime.env.DB) {
+    const db = runtime.env.DB;
+    
+    // Fetch counts from D1
+    const typeCountRes = await db.prepare("SELECT COUNT(*) as count FROM asset_types").get<{ count: number }>();
+    const assetCountRes = await db.prepare("SELECT COUNT(*) as count FROM assets").get<{ count: number }>();
+    const activeChecklistsRes = await db.prepare("SELECT COUNT(*) as count FROM checklist_runs WHERE status = 'active'").get<{ count: number }>();
+    const settingsRes = await db.prepare("SELECT value FROM settings WHERE key = ?").bind("bitwarden_vault_url").get<{ value: string }>();
+
+    stats.typeCount = typeCountRes?.count || 0;
+    stats.assetCount = assetCountRes?.count || 0;
+    stats.activeChecklists = activeChecklistsRes?.count || 0;
+    bitwardenVaultUrl = settingsRes?.value || "https://vault.bitwarden.com";
+
+    // Fetch Starlight KB articles count
+    try {
+        const docs = await getCollection("docs");
+        stats.kbCount = docs.length;
+    } catch (e) {
+        stats.kbCount = 0;
+    }
+}
+---
+
+<DashboardLayout title="Dashboard" activeNav="dashboard">
+    <div class="page-header">
+        <div>
+            <h1 class="page-title">Documentation Dashboard</h1>
+            <p class="page-subtitle">Overview of secure internal resources and checklists</p>
+        </div>
+    </div>
+
+    <!-- Quick Stats Grid -->
+    <div class="grid-cols-3" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 2.5rem;">
+        <div class="card text-center" style="display: flex; flex-direction: column; gap: 0.5rem; justify-content: center; align-items: center;">
+            <span style="font-size: 0.85rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">KB Articles</span>
+            <span style="font-size: 2.5rem; font-weight: 800; background: var(--grad-primary); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">{stats.kbCount}</span>
+            <a href="/docs/guides/example" class="btn btn-secondary btn-sm" style="width: 100%; border-radius: 6px;">View KB</a>
+        </div>
+        
+        <div class="card text-center" style="display: flex; flex-direction: column; gap: 0.5rem; justify-content: center; align-items: center;">
+            <span style="font-size: 0.85rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Asset Types</span>
+            <span style="font-size: 2.5rem; font-weight: 800; background: var(--grad-accent); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">{stats.typeCount}</span>
+            <a href="/structured-docs" class="btn btn-secondary btn-sm" style="width: 100%; border-radius: 6px;">Manage Layouts</a>
+        </div>
+
+        <div class="card text-center" style="display: flex; flex-direction: column; gap: 0.5rem; justify-content: center; align-items: center;">
+            <span style="font-size: 0.85rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Total Assets</span>
+            <span style="font-size: 2.5rem; font-weight: 800; color: var(--color-accent);">{stats.assetCount}</span>
+            <a href="/structured-docs" class="btn btn-secondary btn-sm" style="width: 100%; border-radius: 6px;">View Assets</a>
+        </div>
+
+        <div class="card text-center" style="display: flex; flex-direction: column; gap: 0.5rem; justify-content: center; align-items: center;">
+            <span style="font-size: 0.85rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Active Checklists</span>
+            <span style="font-size: 2.5rem; font-weight: 800; color: #facc15;">{stats.activeChecklists}</span>
+            <a href="/checklists" class="btn btn-secondary btn-sm" style="width: 100%; border-radius: 6px;">Open Runs</a>
+        </div>
+    </div>
+
+    <!-- Configuration & System Integrations -->
+    <div class="grid-cols-3" style="grid-template-columns: 2fr 1fr; align-items: start;">
+        <!-- Settings Panel -->
+        <div class="card">
+            <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 0.5rem;">Global Integrations</h2>
+            <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1.5rem;">Configure settings for external systems connected to the documentation</p>
+
+            <form id="settingsForm">
+                <div id="settingsAlert" class="alert" style="display: none; margin-bottom: 1rem;"></div>
+
+                <div class="form-group">
+                    <label class="form-label" for="bitwardenUrl">Bitwarden Vault Web URL</label>
+                    <input class="form-input" type="url" id="bitwardenUrl" value={bitwardenVaultUrl} required placeholder="https://vault.bitwarden.com">
+                    <span style="font-size: 0.75rem; color: var(--text-muted);">
+                        Use <code>https://vault.bitwarden.com</code> for cloud, or specify your self-hosted vault domain (e.g. <code>https://warden.mycompany.com</code>).
+                    </span>
+                </div>
+
+                <button class="btn btn-primary" type="submit" style="margin-top: 0.5rem;">
+                    Save Settings
+                </button>
+            </form>
+        </div>
+
+        <!-- Quick Help -->
+        <div class="card" style="background: rgba(255,255,255,0.01)">
+            <h3 style="font-size: 1.05rem; font-weight: 700; margin-bottom: 0.5rem;">Documentation Help</h3>
+            <ul style="color: var(--text-secondary); font-size: 0.85rem; padding-left: 1rem; display: flex; flex-direction: column; gap: 0.5rem;">
+                <li>Standard guides and documents can be managed via the Markdown files in the <code>src/content/docs/</code> directory.</li>
+                <li>Asset records allow you to link passwords directly by providing item IDs from Bitwarden.</li>
+                <li>Checklists help follow deployments or operational guidelines step-by-step.</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById("settingsForm") as HTMLFormElement;
+        const alertBox = document.getElementById("settingsAlert") as HTMLDivElement;
+        const submitBtn = form?.querySelector("button[type='submit']") as HTMLButtonElement;
+
+        form?.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            if (!alertBox || !submitBtn) return;
+            
+            alertBox.style.display = "none";
+            submitBtn.disabled = true;
+            submitBtn.textContent = "Saving...";
+
+            const bitwarden_vault_url = (document.getElementById("bitwardenUrl") as HTMLInputElement).value;
+
+            try {
+                const res = await fetch("/api/settings", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ bitwarden_vault_url })
+                });
+
+                if (res.ok) {
+                    alertBox.className = "alert" + " alert-error"; // Clear and override
+                    alertBox.style.background = "rgba(16, 185, 129, 0.1)";
+                    alertBox.style.color = "#34d399";
+                    alertBox.style.border = "1px solid rgba(16, 185, 129, 0.2)";
+                    alertBox.textContent = "Settings saved successfully!";
+                    alertBox.style.display = "block";
+                } else {
+                    const text = await res.text();
+                    throw new Error(text);
+                }
+            } catch (e: any) {
+                alertBox.className = "alert alert-error";
+                alertBox.style.background = "rgba(239, 68, 68, 0.1)";
+                alertBox.style.color = "#f87171";
+                alertBox.style.border = "1px solid rgba(239, 68, 68, 0.2)";
+                alertBox.textContent = e.message || "Failed to save settings.";
+                alertBox.style.display = "block";
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = "Save Settings";
+            }
+        });
+    </script>
+</DashboardLayout>

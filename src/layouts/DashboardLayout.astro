@@ -1,0 +1,114 @@
+---
+import "../styles/app.css";
+
+interface Props {
+    title: string;
+    activeNav: string;
+}
+
+const { title, activeNav } = Astro.props;
+const user = Astro.locals.user;
+const firstLetter = user?.name ? user.name.charAt(0).toUpperCase() : "U";
+---
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{title} | Internal Docs</title>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar-brand">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                </svg>
+                <span>Hudu Docs</span>
+            </div>
+            
+            <nav class="sidebar-nav">
+                <a href="/" class={`sidebar-link ${activeNav === 'dashboard' ? 'active' : ''}`}>
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="3" width="7" height="9"/>
+                        <rect x="14" y="3" width="7" height="5"/>
+                        <rect x="14" y="12" width="7" height="9"/>
+                        <rect x="3" y="16" width="7" height="5"/>
+                    </svg>
+                    Dashboard
+                </a>
+                
+                <a href="/docs/guides/example" class={`sidebar-link ${activeNav === 'kb' ? 'active' : ''}`}>
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+                        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+                    </svg>
+                    Knowledge Base
+                </a>
+                
+                <a href="/structured-docs" class={`sidebar-link ${activeNav === 'structured' ? 'active' : ''}`}>
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
+                        <polyline points="14 2 14 8 20 8"/>
+                        <line x1="16" y1="13" x2="8" y2="13"/>
+                        <line x1="16" y1="17" x2="8" y2="17"/>
+                        <line x1="10" y1="9" x2="8" y2="9"/>
+                    </svg>
+                    Structured Docs
+                </a>
+                
+                <a href="/checklists" class={`sidebar-link ${activeNav === 'checklists' ? 'active' : ''}`}>
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="9 11 12 14 22 4"/>
+                        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+                    </svg>
+                    Checklists
+                </a>
+            </nav>
+            
+            <div class="sidebar-footer">
+                {user && (
+                    <div class="user-profile">
+                        <div class="user-avatar">{firstLetter}</div>
+                        <div class="user-info">
+                            <span class="user-name">{user.name}</span>
+                            <span class="user-email">{user.email}</span>
+                        </div>
+                    </div>
+                )}
+                
+                <button id="logoutBtn" class="btn btn-secondary btn-sm" style="width: 100%;">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px;">
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                        <polyline points="16 17 21 12 16 7"/>
+                        <line x1="21" y1="12" x2="9" y2="12"/>
+                    </svg>
+                    Logout
+                </button>
+            </div>
+        </aside>
+        
+        <!-- Main Dashboard Viewport -->
+        <main class="main-content">
+            <slot />
+        </main>
+    </div>
+
+    <script>
+        import { authClient } from "../lib/auth-client";
+        
+        const logoutBtn = document.getElementById("logoutBtn");
+        if (logoutBtn) {
+            logoutBtn.addEventListener("click", async () => {
+                logoutBtn.setAttribute("disabled", "true");
+                logoutBtn.textContent = "Logging out...";
+                await authClient.signOut({
+                    callbackURL: "/login"
+                });
+            });
+        }
+    </script>
+</body>
+</html>

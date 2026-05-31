@@ -1,0 +1,590 @@
+---
+import DashboardLayout from "../layouts/DashboardLayout.astro";
+
+const runtime = Astro.locals.runtime;
+let assetTypes: any[] = [];
+let assets: any[] = [];
+let bitwardenVaultUrl = "https://vault.bitwarden.com";
+
+if (runtime && runtime.env && runtime.env.DB) {
+    const db = runtime.env.DB;
+    
+    // Fetch all types and assets from D1
+    const typesRes = await db.prepare("SELECT * FROM asset_types ORDER BY name ASC").all();
+    const assetsRes = await db.prepare("SELECT * FROM assets ORDER BY name ASC").all();
+    const settingsRes = await db.prepare("SELECT value FROM settings WHERE key = ?").bind("bitwarden_vault_url").get<{ value: string }>();
+
+    assetTypes = typesRes?.results || [];
+    assets = assetsRes?.results || [];
+    bitwardenVaultUrl = settingsRes?.value || "https://vault.bitwarden.com";
+}
+---
+
+<DashboardLayout title="Structured Docs" activeNav="structured">
+    <div class="page-header">
+        <div>
+            <h1 class="page-title">Structured Documents</h1>
+            <p class="page-subtitle">Manage asset layouts and dynamic configuration sheets</p>
+        </div>
+        <button class="btn btn-primary" id="openCreateTypeBtn">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px;">
+                <line x1="12" y1="5" x2="12" y2="19"/>
+                <line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            New Asset Type
+        </button>
+    </div>
+
+    <!-- Main Dynamic Layout -->
+    <div class="layout-split">
+        <!-- Sidebar - List of Asset Types -->
+        <div class="list-panel">
+            <div class="panel-header">
+                <span class="panel-title">Asset Types</span>
+            </div>
+            
+            <div id="typesList" style="display: flex; flex-direction: column; gap: 0.5rem;">
+                {assetTypes.map(type => (
+                    <button class="list-item-btn type-item-btn" data-id={type.id} data-fields={type.fields_json} data-name={type.name} data-desc={type.description}>
+                        <span style="display: flex; align-items: center; gap: 0.5rem;">
+                            <span>{type.icon || "📄"}</span>
+                            <span>{type.name}</span>
+                        </span>
+                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px; opacity: 0.5;">
+                            <polyline points="9 18 15 12 9 6"/>
+                        </svg>
+                    </button>
+                ))}
+                
+                {assetTypes.length === 0 && (
+                    <div style="color: var(--text-muted); font-size: 0.875rem; text-align: center; padding: 2rem 1rem;">
+                        No asset layouts created yet.
+                    </div>
+                )}
+            </div>
+        </div>
+
+        <!-- Main Details and Assets List -->
+        <div id="detailsPanel" class="card" style="display: none; min-height: 400px; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; color: var(--text-secondary);">
+            <div id="emptyState">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="width: 48px; height: 48px; margin-bottom: 1rem; color: var(--text-muted);">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="16" y1="13" x2="8" y2="13"/>
+                    <line x1="16" y1="17" x2="8" y2="17"/>
+                    <polyline points="10 9 9 9 8 9"/>
+                </svg>
+                <p>Select an Asset Type from the sidebar layout or create a new template to start documenting.</p>
+            </div>
+            
+            <div id="typeContent" style="display: none; width: 100%; text-align: left; height: 100%;">
+                <div class="flex-between" style="border-bottom: 1px solid var(--border-color); padding-bottom: 1.25rem; margin-bottom: 1.5rem; width: 100%;">
+                    <div>
+                        <h2 id="currentTypeName" style="font-size: 1.5rem; font-weight: 700; color: var(--text-primary);"></h2>
+                        <p id="currentTypeDesc" style="color: var(--text-secondary); font-size: 0.9rem; margin-top: 0.25rem;"></p>
+                    </div>
+                    <div class="flex-row">
+                        <button class="btn btn-danger btn-sm" id="deleteTypeBtn">Delete Layout</button>
+                        <button class="btn btn-primary btn-sm" id="createAssetBtn">Add Asset</button>
+                    </div>
+                </div>
+
+                <h3 style="font-size: 0.85rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 1rem;">Asset Records</h3>
+                <div class="assets-grid" id="assetsGrid">
+                    <!-- Loaded dynamically -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: Create Asset Type -->
+    <div class="modal-overlay" id="createTypeModal" style="display: none;">
+        <div class="modal" style="max-width: 600px;">
+            <div class="modal-header">
+                <h3 style="font-size: 1.25rem; font-weight: 700;">New Asset Layout</h3>
+                <button class="btn btn-secondary btn-sm" style="padding: 0.25rem; border: none; background: transparent;" onclick="document.getElementById('createTypeModal').style.display='none'">✕</button>
+            </div>
+            <form id="createTypeForm">
+                <div class="form-group">
+                    <label class="form-label" for="typeName">Layout Name</label>
+                    <input class="form-input" type="text" id="typeName" required placeholder="e.g. Web Server, Database, Network Switches">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="typeIcon">Emoji Icon</label>
+                    <input class="form-input" type="text" id="typeIcon" maxlength="2" placeholder="🖥️">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="typeDescription">Description</label>
+                    <input class="form-input" type="text" id="typeDescription" placeholder="Layout overview...">
+                </div>
+
+                <div style="border-top: 1px solid var(--border-color); margin-top: 1.5rem; padding-top: 1rem;">
+                    <div class="flex-between" style="margin-bottom: 1rem;">
+                        <span style="font-size: 0.9rem; font-weight: 600; color: var(--text-secondary);">Custom Fields</span>
+                        <button type="button" class="btn btn-secondary btn-sm" id="addFieldBtn">+ Add Field</button>
+                    </div>
+                    <div class="fields-builder-list" id="fieldsBuilder">
+                        <!-- Default Row -->
+                        <div class="field-builder-row" data-index="0">
+                            <input class="form-input" type="text" placeholder="Field Label (e.g. IP Address)" required>
+                            <select class="form-select">
+                                <option value="text">Text</option>
+                                <option value="password">Password</option>
+                                <option value="textarea">Text Area</option>
+                                <option value="bitwarden_item">Bitwarden Item Link</option>
+                                <option value="bitwarden_collection">Bitwarden Group Link</option>
+                            </select>
+                            <button type="button" class="btn btn-danger btn-sm" style="padding: 0.5rem; border-radius: var(--radius-sm);" onclick="this.parentElement.remove()">✕</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="document.getElementById('createTypeModal').style.display='none'">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="saveTypeSubmitBtn">Create Layout</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: Create / Edit Asset -->
+    <div class="modal-overlay" id="assetModal" style="display: none;">
+        <div class="modal" style="max-width: 550px;">
+            <div class="modal-header">
+                <h3 style="font-size: 1.25rem; font-weight: 700;" id="assetModalTitle">Add Asset</h3>
+                <button class="btn btn-secondary btn-sm" style="padding: 0.25rem; border: none; background: transparent;" onclick="document.getElementById('assetModal').style.display='none'">✕</button>
+            </div>
+            <form id="assetForm">
+                <input type="hidden" id="editingAssetId">
+                <div class="form-group">
+                    <label class="form-label" for="assetName">Asset Name / Title</label>
+                    <input class="form-input" type="text" id="assetName" required placeholder="e.g. Production Web Host 01">
+                </div>
+                
+                <div id="dynamicFieldsContainer" style="display: flex; flex-direction: column; gap: 1rem; margin-top: 1rem; border-top: 1px solid var(--border-color); padding-top: 1rem;">
+                    <!-- Built dynamically depending on current Type -->
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="document.getElementById('assetModal').style.display='none'">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="saveAssetSubmitBtn">Save Asset</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: View Asset Details -->
+    <div class="modal-overlay" id="viewAssetModal" style="display: none;">
+        <div class="modal" style="max-width: 600px;">
+            <div class="modal-header" style="border-bottom: 1px solid var(--border-color); padding-bottom: 1rem; margin-bottom: 1.5rem;">
+                <div>
+                    <span id="viewAssetTypeBadge" style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: var(--color-primary); letter-spacing: 0.05em;"></span>
+                    <h3 style="font-size: 1.5rem; font-weight: 800; color: var(--text-primary); margin-top: 0.25rem;" id="viewAssetName"></h3>
+                </div>
+                <button class="btn btn-secondary btn-sm" style="padding: 0.25rem; border: none; background: transparent;" onclick="document.getElementById('viewAssetModal').style.display='none'">✕</button>
+            </div>
+            
+            <div id="viewAssetFields" style="display: flex; flex-direction: column; gap: 1.25rem;">
+                <!-- Loaded dynamically -->
+            </div>
+
+            <div class="modal-footer" style="border-top: 1px solid var(--border-color); padding-top: 1rem; margin-top: 1.5rem;">
+                <button class="btn btn-danger" style="margin-right: auto;" id="deleteAssetBtn">Delete Asset</button>
+                <button class="btn btn-secondary" onclick="document.getElementById('viewAssetModal').style.display='none'">Close</button>
+                <button class="btn btn-primary" id="editAssetBtn">Edit Record</button>
+            </div>
+        </div>
+    </div>
+
+    <script define:vars={{ bitwardenVaultUrl, assets }}>
+        let selectedTypeId = "";
+        let selectedFields = [];
+        let currentTypeAssets = [];
+        let currentViewedAsset = null;
+
+        // Toggle Modals
+        const openCreateTypeBtn = document.getElementById("openCreateTypeBtn");
+        const createTypeModal = document.getElementById("createTypeModal");
+        if (openCreateTypeBtn && createTypeModal) {
+            openCreateTypeBtn.addEventListener("click", () => {
+                createTypeModal.style.display = "flex";
+            });
+        }
+
+        // Field Builder
+        const addFieldBtn = document.getElementById("addFieldBtn");
+        const fieldsBuilder = document.getElementById("fieldsBuilder");
+        if (addFieldBtn && fieldsBuilder) {
+            addFieldBtn.addEventListener("click", () => {
+                const index = fieldsBuilder.children.length;
+                const row = document.createElement("div");
+                row.className = "field-builder-row";
+                row.innerHTML = `
+                    <input class="form-input" type="text" placeholder="Field Label (e.g. SSH Password)" required>
+                    <select class="form-select">
+                        <option value="text">Text</option>
+                        <option value="password">Password</option>
+                        <option value="textarea">Text Area</option>
+                        <option value="bitwarden_item">Bitwarden Item Link</option>
+                        <option value="bitwarden_collection">Bitwarden Group Link</option>
+                    </select>
+                    <button type="button" class="btn btn-danger btn-sm" style="padding: 0.5rem; border-radius: var(--radius-sm);" onclick="this.parentElement.remove()">✕</button>
+                `;
+                fieldsBuilder.appendChild(row);
+            });
+        }
+
+        // Save Type Form
+        const createTypeForm = document.getElementById("createTypeForm");
+        createTypeForm?.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const name = (document.getElementById("typeName") as HTMLInputElement).value;
+            const icon = (document.getElementById("typeIcon") as HTMLInputElement).value;
+            const description = (document.getElementById("typeDescription") as HTMLInputElement).value;
+
+            // Collect fields
+            const fields: any[] = [];
+            const rows = fieldsBuilder?.querySelectorAll(".field-builder-row");
+            rows?.forEach((row) => {
+                const label = (row.querySelector("input") as HTMLInputElement).value;
+                const type = (row.querySelector("select") as HTMLSelectElement).value;
+                fields.push({ name: label, type });
+            });
+
+            const submitBtn = document.getElementById("saveTypeSubmitBtn") as HTMLButtonElement;
+            submitBtn.disabled = true;
+            submitBtn.textContent = "Creating...";
+
+            try {
+                const res = await fetch("/api/assets?action=create_type", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ name, icon, description, fields })
+                });
+
+                if (res.ok) {
+                    window.location.reload();
+                } else {
+                    alert("Failed to create layout");
+                }
+            } catch (err) {
+                console.error(err);
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = "Create Layout";
+            }
+        });
+
+        // Delete Layout
+        const deleteTypeBtn = document.getElementById("deleteTypeBtn");
+        deleteTypeBtn?.addEventListener("click", async () => {
+            if (!selectedTypeId) return;
+            if (!confirm("Are you sure you want to delete this Layout? All related assets will be deleted!")) return;
+
+            try {
+                const res = await fetch("/api/assets?action=delete_type", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ id: selectedTypeId })
+                });
+                if (res.ok) {
+                    window.location.reload();
+                }
+            } catch (err) {
+                console.error(err);
+            }
+        });
+
+        // Sidebar Navigation click on Types
+        const typeItemBtns = document.querySelectorAll(".type-item-btn");
+        const detailsPanel = document.getElementById("detailsPanel");
+        const emptyState = document.getElementById("emptyState");
+        const typeContent = document.getElementById("typeContent");
+
+        typeItemBtns.forEach(btn => {
+            btn.addEventListener("click", () => {
+                typeItemBtns.forEach(b => b.classList.remove("active"));
+                btn.classList.add("active");
+
+                const id = btn.getAttribute("data-id") || "";
+                const name = btn.getAttribute("data-name") || "";
+                const desc = btn.getAttribute("data-desc") || "";
+                const fields = JSON.parse(btn.getAttribute("data-fields") || "[]");
+
+                selectedTypeId = id;
+                selectedFields = fields;
+
+                // Load assets of this type
+                currentTypeAssets = assets.filter((asset: any) => asset.asset_type_id === id);
+
+                // Show Content
+                if (detailsPanel && emptyState && typeContent) {
+                    detailsPanel.style.display = "block";
+                    detailsPanel.style.alignItems = "unset";
+                    detailsPanel.style.textAlign = "left";
+                    emptyState.style.display = "none";
+                    typeContent.style.display = "block";
+
+                    const currentTypeName = document.getElementById("currentTypeName");
+                    const currentTypeDesc = document.getElementById("currentTypeDesc");
+                    if (currentTypeName) currentTypeName.textContent = name;
+                    if (currentTypeDesc) currentTypeDesc.textContent = desc;
+
+                    renderAssetsGrid();
+                }
+            });
+        });
+
+        function renderAssetsGrid() {
+            const assetsGrid = document.getElementById("assetsGrid");
+            if (!assetsGrid) return;
+            assetsGrid.innerHTML = "";
+
+            if (currentTypeAssets.length === 0) {
+                assetsGrid.innerHTML = `
+                    <div style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 3rem 1rem;">
+                        No assets documented for this layout.
+                    </div>
+                `;
+                return;
+            }
+
+            currentTypeAssets.forEach((asset: any) => {
+                const card = document.createElement("div");
+                card.className = "card asset-card";
+                card.style.padding = "1.25rem";
+                card.innerHTML = `
+                    <h4 style="font-weight: 700; margin-bottom: 0.25rem;">${asset.name}</h4>
+                    <span style="font-size: 0.75rem; color: var(--text-muted);">
+                        Updated: ${new Date(asset.updated_at).toLocaleDateString()}
+                    </span>
+                `;
+                card.addEventListener("click", () => {
+                    openViewAssetModal(asset);
+                });
+                assetsGrid.appendChild(card);
+            });
+        }
+
+        // Open Asset Modal (Create Mode)
+        const assetModal = document.getElementById("assetModal");
+        const createAssetBtn = document.getElementById("createAssetBtn");
+        createAssetBtn?.addEventListener("click", () => {
+            if (!assetModal) return;
+            const editingAssetIdInput = document.getElementById("editingAssetId") as HTMLInputElement;
+            editingAssetIdInput.value = ""; // Empty for create
+            
+            const title = document.getElementById("assetModalTitle");
+            if (title) title.textContent = "Add Asset";
+
+            const assetName = document.getElementById("assetName") as HTMLInputElement;
+            assetName.value = "";
+
+            buildDynamicFieldsForm({});
+            assetModal.style.display = "flex";
+        });
+
+        function buildDynamicFieldsForm(values: any) {
+            const container = document.getElementById("dynamicFieldsContainer");
+            if (!container) return;
+            container.innerHTML = "";
+
+            selectedFields.forEach((field: any, idx: number) => {
+                const val = values[field.name] || "";
+                const formGroup = document.createElement("div");
+                formGroup.className = "form-group";
+
+                let inputHTML = "";
+                if (field.type === "password") {
+                    inputHTML = `<input class="form-input dynamic-field" data-name="${field.name}" data-type="${field.type}" type="password" value="${val}" placeholder="••••••••">`;
+                } else if (field.type === "textarea") {
+                    inputHTML = `<textarea class="form-textarea dynamic-field" data-name="${field.name}" data-type="${field.type}" placeholder="Write description...">${val}</textarea>`;
+                } else if (field.type === "bitwarden_item") {
+                    inputHTML = `<input class="form-input dynamic-field" data-name="${field.name}" data-type="${field.type}" type="text" value="${val}" placeholder="Bitwarden Item UUID">`;
+                } else if (field.type === "bitwarden_collection") {
+                    inputHTML = `<input class="form-input dynamic-field" data-name="${field.name}" data-type="${field.type}" type="text" value="${val}" placeholder="Bitwarden Collection UUID">`;
+                } else {
+                    inputHTML = `<input class="form-input dynamic-field" data-name="${field.name}" data-type="${field.type}" type="text" value="${val}" placeholder="Enter value...">`;
+                }
+
+                formGroup.innerHTML = `
+                    <label class="form-label">${field.name}</label>
+                    ${inputHTML}
+                `;
+                container.appendChild(formGroup);
+            });
+        }
+
+        // Save Asset
+        const assetForm = document.getElementById("assetForm");
+        assetForm?.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const editingAssetId = (document.getElementById("editingAssetId") as HTMLInputElement).value;
+            const name = (document.getElementById("assetName") as HTMLInputElement).value;
+            
+            // Collect dynamic fields values
+            const values: any = {};
+            const fieldsElements = assetForm.querySelectorAll(".dynamic-field");
+            fieldsElements.forEach((el: any) => {
+                const name = el.getAttribute("data-name");
+                const val = el.value;
+                values[name] = val;
+            });
+
+            const submitBtn = document.getElementById("saveAssetSubmitBtn") as HTMLButtonElement;
+            submitBtn.disabled = true;
+            submitBtn.textContent = "Saving...";
+
+            const action = editingAssetId ? "update_asset" : "create_asset";
+            const payload: any = editingAssetId 
+                ? { id: editingAssetId, values } 
+                : { asset_type_id: selectedTypeId, name, values };
+
+            try {
+                const res = await fetch(`/api/assets?action=${action}`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+                if (res.ok) {
+                    window.location.reload();
+                } else {
+                    alert("Failed to save asset");
+                }
+            } catch (err) {
+                console.error(err);
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = "Save Asset";
+            }
+        });
+
+        // View Asset Modal
+        const viewAssetModal = document.getElementById("viewAssetModal");
+        const viewAssetTypeBadge = document.getElementById("viewAssetTypeBadge");
+        const viewAssetName = document.getElementById("viewAssetName");
+        const viewAssetFields = document.getElementById("viewAssetFields");
+
+        function openViewAssetModal(asset: any) {
+            if (!viewAssetModal || !viewAssetName || !viewAssetFields) return;
+            currentViewedAsset = asset;
+            const values = JSON.parse(asset.values_json || "{}");
+
+            // Fetch layout button active text
+            const activeLayoutBtn = document.querySelector(".type-item-btn.active");
+            const layoutName = activeLayoutBtn ? activeLayoutBtn.getAttribute("data-name") : "Asset";
+
+            if (viewAssetTypeBadge) viewAssetTypeBadge.textContent = layoutName;
+            viewAssetName.textContent = asset.name;
+
+            viewAssetFields.innerHTML = "";
+            selectedFields.forEach((field: any) => {
+                const val = values[field.name] || "";
+                const row = document.createElement("div");
+                row.style.display = "flex";
+                row.style.flexDirection = "column";
+                row.style.gap = "0.25rem";
+
+                let contentHTML = "";
+                if (field.type === "password") {
+                    contentHTML = `
+                        <div class="password-field-wrapper">
+                            <span class="password-masked-val" data-val="${val}">••••••••</span>
+                            <button class="btn btn-secondary btn-sm toggle-pwd-btn" style="padding: 0.25rem 0.5rem; font-size: 0.7rem;">Reveal</button>
+                        </div>
+                    `;
+                } else if (field.type === "textarea") {
+                    contentHTML = `<div style="background: rgba(255,255,255,0.02); padding: 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color); white-space: pre-wrap; font-size: 0.95rem;">${val || '<span style="color: var(--text-muted)">None</span>'}</div>`;
+                } else if (field.type === "bitwarden_item" && val) {
+                    contentHTML = `
+                        <a href="${bitwardenVaultUrl}/#/vault?itemId=${val}" target="_blank" class="bitwarden-badge">
+                            <svg viewBox="0 0 24 24" fill="currentColor" style="width: 16px; height: 16px;">
+                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+                            </svg>
+                            Bitwarden Vault Item
+                        </a>
+                        <span style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem; font-family: monospace;">ID: ${val}</span>
+                    `;
+                } else if (field.type === "bitwarden_collection" && val) {
+                    contentHTML = `
+                        <a href="${bitwardenVaultUrl}/#/vault?collectionId=${val}" target="_blank" class="bitwarden-badge" style="background: rgba(6, 182, 212, 0.15); border-color: rgba(6, 182, 212, 0.3); color: #22d3ee;">
+                            <svg viewBox="0 0 24 24" fill="currentColor" style="width: 16px; height: 16px;">
+                                <path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12z"/>
+                            </svg>
+                            Bitwarden Group
+                        </a>
+                        <span style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem; font-family: monospace;">ID: ${val}</span>
+                    `;
+                } else {
+                    contentHTML = `<span style="font-size: 1rem; font-weight: 500;">${val || '<span style="color: var(--text-muted); font-weight: normal;">None</span>'}</span>`;
+                }
+
+                row.innerHTML = `
+                    <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">${field.name}</span>
+                    ${contentHTML}
+                `;
+                viewAssetFields.appendChild(row);
+            });
+
+            // Set up Password Toggle Click Handlers
+            const pwdToggleBtns = viewAssetFields.querySelectorAll(".toggle-pwd-btn");
+            pwdToggleBtns.forEach(btn => {
+                btn.addEventListener("click", () => {
+                    const wrap = btn.parentElement;
+                    const maskedSpan = wrap?.querySelector(".password-masked-val") as HTMLElement;
+                    const val = maskedSpan.getAttribute("data-val") || "";
+                    if (btn.textContent === "Reveal") {
+                        maskedSpan.textContent = val;
+                        btn.textContent = "Hide";
+                    } else {
+                        maskedSpan.textContent = "••••••••";
+                        btn.textContent = "Reveal";
+                    }
+                });
+            });
+
+            viewAssetModal.style.display = "flex";
+        }
+
+        // Delete Asset
+        const deleteAssetBtn = document.getElementById("deleteAssetBtn");
+        deleteAssetBtn?.addEventListener("click", async () => {
+            if (!currentViewedAsset) return;
+            if (!confirm("Are you sure you want to delete this asset record?")) return;
+
+            try {
+                const res = await fetch("/api/assets?action=delete_asset", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ id: currentViewedAsset.id })
+                });
+                if (res.ok) {
+                    window.location.reload();
+                }
+            } catch (err) {
+                console.error(err);
+            }
+        });
+
+        // Edit Asset Form Trigger
+        const editAssetBtn = document.getElementById("editAssetBtn");
+        editAssetBtn?.addEventListener("click", () => {
+            if (!currentViewedAsset || !viewAssetModal || !assetModal) return;
+            viewAssetModal.style.display = "none"; // Hide details modal
+
+            const editingAssetIdInput = document.getElementById("editingAssetId") as HTMLInputElement;
+            editingAssetIdInput.value = currentViewedAsset.id;
+
+            const title = document.getElementById("assetModalTitle");
+            if (title) title.textContent = "Edit Asset";
+
+            const assetName = document.getElementById("assetName") as HTMLInputElement;
+            assetName.value = currentViewedAsset.name;
+
+            const values = JSON.parse(currentViewedAsset.values_json || "{}");
+            buildDynamicFieldsForm(values);
+
+            assetModal.style.display = "flex";
+        });
+    </script>
+</DashboardLayout>
