@@ -44,9 +44,8 @@ let tablesInitialized = false;
 export async function initializeD1(db: D1Database) {
     if (tablesInitialized) return;
 
-    // Better Auth + Custom Application Tables
-    const schema = `
-        CREATE TABLE IF NOT EXISTS user (
+    const tables = [
+        `CREATE TABLE IF NOT EXISTS user (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
             email TEXT NOT NULL UNIQUE,
@@ -54,9 +53,8 @@ export async function initializeD1(db: D1Database) {
             image TEXT,
             createdAt INTEGER NOT NULL,
             updatedAt INTEGER NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS session (
+        )`,
+        `CREATE TABLE IF NOT EXISTS session (
             id TEXT PRIMARY KEY,
             expiresAt INTEGER NOT NULL,
             token TEXT NOT NULL UNIQUE,
@@ -66,9 +64,8 @@ export async function initializeD1(db: D1Database) {
             userAgent TEXT,
             userId TEXT NOT NULL,
             FOREIGN KEY (userId) REFERENCES user (id)
-        );
-
-        CREATE TABLE IF NOT EXISTS account (
+        )`,
+        `CREATE TABLE IF NOT EXISTS account (
             id TEXT PRIMARY KEY,
             accountId TEXT NOT NULL,
             providerId TEXT NOT NULL,
@@ -83,26 +80,23 @@ export async function initializeD1(db: D1Database) {
             createdAt INTEGER NOT NULL,
             updatedAt INTEGER NOT NULL,
             FOREIGN KEY (userId) REFERENCES user (id)
-        );
-
-        CREATE TABLE IF NOT EXISTS verification (
+        )`,
+        `CREATE TABLE IF NOT EXISTS verification (
             id TEXT PRIMARY KEY,
             identifier TEXT NOT NULL,
             value TEXT NOT NULL,
             expiresAt INTEGER NOT NULL,
             createdAt INTEGER,
             updatedAt INTEGER
-        );
-
-        CREATE TABLE IF NOT EXISTS asset_types (
+        )`,
+        `CREATE TABLE IF NOT EXISTS asset_types (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
             icon TEXT,
             description TEXT,
             fields_json TEXT NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS assets (
+        )`,
+        `CREATE TABLE IF NOT EXISTS assets (
             id TEXT PRIMARY KEY,
             asset_type_id TEXT NOT NULL,
             name TEXT NOT NULL,
@@ -110,18 +104,16 @@ export async function initializeD1(db: D1Database) {
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL,
             FOREIGN KEY (asset_type_id) REFERENCES asset_types (id)
-        );
-
-        CREATE TABLE IF NOT EXISTS checklist_templates (
+        )`,
+        `CREATE TABLE IF NOT EXISTS checklist_templates (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
             description TEXT,
             items_json TEXT NOT NULL,
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS checklist_runs (
+        )`,
+        `CREATE TABLE IF NOT EXISTS checklist_runs (
             id TEXT PRIMARY KEY,
             template_id TEXT NOT NULL,
             name TEXT NOT NULL,
@@ -130,18 +122,17 @@ export async function initializeD1(db: D1Database) {
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL,
             FOREIGN KEY (template_id) REFERENCES checklist_templates (id)
-        );
-
-        CREATE TABLE IF NOT EXISTS settings (
+        )`,
+        `CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
-        );
-    `;
+        )`
+    ];
 
-    // Split schema into individual SQL statements to execute on D1
-    // D1 exec() accepts raw string block and runs all of them
     try {
-        await db.exec(schema);
+        for (const sql of tables) {
+            await db.prepare(sql).run();
+        }
         tablesInitialized = true;
     } catch (e) {
         console.error("Failed to initialize database tables:", e);

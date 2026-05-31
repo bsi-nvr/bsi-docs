@@ -1,13 +1,14 @@
 ---
 import DashboardLayout from "../layouts/DashboardLayout.astro";
 
-const runtime = Astro.locals.runtime;
+import { env } from "cloudflare:workers";
+
+const db = typeof env !== "undefined" ? (env as any).DB : undefined;
 let assetTypes: any[] = [];
 let assets: any[] = [];
 let bitwardenVaultUrl = "https://vault.bitwarden.com";
 
-if (runtime && runtime.env && runtime.env.DB) {
-    const db = runtime.env.DB;
+if (db) {
     
     // Fetch all types and assets from D1
     const typesRes = await db.prepare("SELECT * FROM asset_types ORDER BY name ASC").all();

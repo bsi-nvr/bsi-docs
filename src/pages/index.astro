@@ -2,7 +2,9 @@
 import DashboardLayout from "../layouts/DashboardLayout.astro";
 import { getCollection } from "astro:content";
 
-const runtime = Astro.locals.runtime;
+import { env } from "cloudflare:workers";
+
+const db = typeof env !== "undefined" ? (env as any).DB : undefined;
 let stats = {
     kbCount: 0,
     typeCount: 0,
@@ -11,8 +13,7 @@ let stats = {
 };
 let bitwardenVaultUrl = "https://vault.bitwarden.com";
 
-if (runtime && runtime.env && runtime.env.DB) {
-    const db = runtime.env.DB;
+if (db) {
     
     // Fetch counts from D1
     const typeCountRes = await db.prepare("SELECT COUNT(*) as count FROM asset_types").get<{ count: number }>();

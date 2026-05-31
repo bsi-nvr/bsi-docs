@@ -1,13 +1,13 @@
 import type { APIRoute } from "astro";
+import { env } from "cloudflare:workers";
 import { getAuth } from "../../../auth";
 
 export const ALL: APIRoute = async (context) => {
-    const runtime = context.locals.runtime;
-    if (!runtime || !runtime.env || !runtime.env.DB) {
+    const db = typeof env !== "undefined" ? (env as any).DB : undefined;
+    if (!db) {
         return new Response("Database binding not found", { status: 500 });
     }
 
-    const db = runtime.env.DB;
     const baseURL = context.url.origin;
     const auth = getAuth(db, baseURL);
 

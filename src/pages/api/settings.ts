@@ -1,16 +1,15 @@
 import type { APIRoute } from "astro";
+import { env } from "cloudflare:workers";
 
 export const GET: APIRoute = async (context) => {
-    const runtime = context.locals.runtime;
-    if (!runtime || !runtime.env || !runtime.env.DB) {
+    const db = typeof env !== "undefined" ? (env as any).DB : undefined;
+    if (!db) {
         return new Response("Database binding not found", { status: 500 });
     }
 
     if (!context.locals.session) {
         return new Response("Unauthorized", { status: 401 });
     }
-
-    const db = runtime.env.DB;
 
     try {
         const row = await db.prepare("SELECT value FROM settings WHERE key = ?")
@@ -30,8 +29,8 @@ export const GET: APIRoute = async (context) => {
 };
 
 export const POST: APIRoute = async (context) => {
-    const runtime = context.locals.runtime;
-    if (!runtime || !runtime.env || !runtime.env.DB) {
+    const db = typeof env !== "undefined" ? (env as any).DB : undefined;
+    if (!db) {
         return new Response("Database binding not found", { status: 500 });
     }
 
@@ -39,7 +38,6 @@ export const POST: APIRoute = async (context) => {
         return new Response("Unauthorized", { status: 401 });
     }
 
-    const db = runtime.env.DB;
     const body = await context.request.json().catch(() => ({}));
     const { bitwarden_vault_url } = body;
 

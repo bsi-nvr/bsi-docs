@@ -1,8 +1,9 @@
 import type { APIRoute } from "astro";
+import { env } from "cloudflare:workers";
 
 export const GET: APIRoute = async (context) => {
-    const runtime = context.locals.runtime;
-    if (!runtime || !runtime.env || !runtime.env.DB) {
+    const db = typeof env !== "undefined" ? (env as any).DB : undefined;
+    if (!db) {
         return new Response("Database binding not found", { status: 500 });
     }
 
@@ -11,7 +12,6 @@ export const GET: APIRoute = async (context) => {
         return new Response("Unauthorized", { status: 401 });
     }
 
-    const db = runtime.env.DB;
     const url = new URL(context.request.url);
     const action = url.searchParams.get("action");
 
@@ -47,8 +47,8 @@ export const GET: APIRoute = async (context) => {
 };
 
 export const POST: APIRoute = async (context) => {
-    const runtime = context.locals.runtime;
-    if (!runtime || !runtime.env || !runtime.env.DB) {
+    const db = typeof env !== "undefined" ? (env as any).DB : undefined;
+    if (!db) {
         return new Response("Database binding not found", { status: 500 });
     }
 
@@ -57,7 +57,6 @@ export const POST: APIRoute = async (context) => {
         return new Response("Unauthorized", { status: 401 });
     }
 
-    const db = runtime.env.DB;
     const url = new URL(context.request.url);
     const action = url.searchParams.get("action");
     const body = await context.request.json().catch(() => ({}));

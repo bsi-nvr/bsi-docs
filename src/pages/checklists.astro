@@ -1,12 +1,13 @@
 ---
 import DashboardLayout from "../layouts/DashboardLayout.astro";
 
-const runtime = Astro.locals.runtime;
+import { env } from "cloudflare:workers";
+
+const db = typeof env !== "undefined" ? (env as any).DB : undefined;
 let templates: any[] = [];
 let runs: any[] = [];
 
-if (runtime && runtime.env && runtime.env.DB) {
-    const db = runtime.env.DB;
+if (db) {
     const templatesRes = await db.prepare("SELECT * FROM checklist_templates ORDER BY name ASC").all();
     const runsRes = await db.prepare("SELECT * FROM checklist_runs ORDER BY created_at DESC").all();
 

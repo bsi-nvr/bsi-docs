@@ -1,19 +1,17 @@
 import { defineMiddleware } from "astro:middleware";
+import { env } from "cloudflare:workers";
 import { getAuth } from "./auth";
 import { initializeD1 } from "./db";
 
 export const onRequest = defineMiddleware(async (context, next) => {
-    const runtime = context.locals.runtime;
+    // Access DB binding from cloudflare:workers env directly in Astro v6
+    const db = typeof env !== "undefined" ? (env as any).DB : undefined;
     
-    // Ensure runtime environment and database exist
-    if (!runtime || !runtime.env || !runtime.env.DB) {
-        // Fallback for build time or environments where D1 is not bound yet
+    if (!db) {
         context.locals.user = null;
         context.locals.session = null;
         return next();
     }
-
-    const db = runtime.env.DB;
 
     // Automatically initialize database schema at runtime
     await initializeD1(db);
